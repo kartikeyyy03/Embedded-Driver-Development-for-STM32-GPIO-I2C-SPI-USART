@@ -12,6 +12,9 @@ static void I2C_ExecuteAddressPhaseWrite(I2C_RegDef_t *pI2Cx, uint8_t SlaveAddr)
 static void I2C_ExecuteAddressPhaseRead(I2C_RegDef_t *pI2Cx, uint8_t SlaveAddr);
 static void I2C_GenerateStopCondition(I2C_RegDef_t *pI2Cx);
 
+static void I2C_MasterHandleRXNEInterrupt(I2C_Handle_t *pI2CHandle );
+static void I2C_MasterHandleTXEInterrupt(I2C_Handle_t *pI2CHandle );
+
 static void I2C_ClearADDRFlag(I2C_Handle_t *pI2CHandle);
 
 static void I2C_GenerateStartCondition(I2C_RegDef_t *pI2Cx){
@@ -216,6 +219,7 @@ void I2C_PeriClockControl(I2C_RegDef_t *pI2Cx, uint8_t EnorDi){
 
 
 }
+
 
 
 
@@ -453,6 +457,67 @@ void I2C_MasterReceiveData(I2C_Handle_t *pI2CHandle, uint8_t *pRxbuffer, uint8_t
 
 
 
+}
+
+
+
+static void I2C_MasterHandleTXEInterrupt(I2C_Handle_t *pI2CHandle )
+{
+
+	if(pI2CHandle->TxLen > 0)
+	{
+		//1. load the data in to DR
+		pI2CHandle->pI2Cx->DR = *(pI2CHandle->pTxBuffer);
+
+		//2. decrement the TxLen
+		pI2CHandle->TxLen--;
+
+		//3. Increment the buffer address
+		pI2CHandle->pTxBuffer++;
+
+	}
+
+}
+
+static void I2C_MasterHandleRXNEInterrupt(I2C_Handle_t *pI2CHandle )
+{
+	//We have to do the data reception
+	if(pI2CHandle->RxSize == 1)
+	{
+		*pI2CHandle->pRxBuffer = pI2CHandle->pI2Cx->DR;
+		pI2CHandle->RxLen--;
+
+	}
+
+
+	if(pI2CHandle->RxSize > 1)
+	{
+		if(pI2CHandle->RxLen == 2)
+		{
+			//clear the ack bit
+			I2C_ManageAcking(pI2CHandle->pI2Cx,DISABLE);
+		}
+
+			//read DR
+			*pI2CHandle->pRxBuffer = pI2CHandle->pI2Cx->DR;
+			pI2CHandle->pRxBuffer++;
+			pI2CHandle->RxLen--;
+	}
+
+	if(pI2CHandle->RxLen == 0 )
+	{
+		//close the I2C data reception and notify the application
+
+		//1. generate the stop condition
+		if(pI2CHandle->Sr == I2C_DISABLE_SR)
+			I2C_GenerateStopCondition(pI2CHandle->pI2Cx);
+
+		//2 . Close the I2C rx
+		I2C_CloseReceiveData(pI2CHandle);
+
+		//3. Notify the application
+		I2C_ApplicationEventCallback(pI2CHandle,I2C_EV_RX_CMPLT);
+	}
 }
 
 
